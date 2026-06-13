@@ -1,0 +1,18 @@
+# Android / Gradle build outputs
+.gradle/
+build/
+app/build/
+*.apk
+*.aab
+
+# Machine-specific SDK path
+local.properties
+
+# Gradle caches / daemon
+.gradle
+captures/
+
+# IDE
+.idea/
+*.iml
+.DS_Store
