@@ -1,15 +1,14 @@
 package store.anybodycan.meshtalk;
 
 import android.Manifest;
+import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.Bundle;
-import android.text.TextUtils;
 import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.TextView;
-import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AlertDialog;
@@ -22,53 +21,72 @@ import androidx.recyclerview.widget.RecyclerView;
 import java.util.ArrayList;
 import java.util.List;
 
-public class MainActivity extends AppCompatActivity implements MeshManager.MeshListener {
+/**
+ * Home screen: the list of active devices nearby. Tap one to open a 1:1 chat, or tap the
+ * pinned "Everyone (Group)" row to broadcast. The mesh runs app-wide (see {@link Mesh}) so
+ * it keeps discovering while you're inside a chat. Fully offline — no server anywhere.
+ */
+public class MainActivity extends AppCompatActivity
+        implements MeshManager.MeshListener, PeerStore.Observer {
 
     private static final int REQ_PERMS = 1001;
 
     private Identity identity;
-    private MeshManager mesh;
-    private ChatAdapter adapter;
+    private PeerListAdapter adapter;
     private RecyclerView list;
-    private EditText input;
     private TextView status;
-    private boolean started = false;
+    private TextView empty;
+    private TextView me;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
-        identity = new Identity(this);
+        identity = Mesh.identity(this);
         status = findViewById(R.id.status);
-        list = findViewById(R.id.messages);
-        input = findViewById(R.id.input);
-        Button send = findViewById(R.id.send);
+        empty = findViewById(R.id.empty);
+        me = findViewById(R.id.me);
+        list = findViewById(R.id.peers);
         Button name = findViewById(R.id.nameBtn);
 
-        adapter = new ChatAdapter(identity.getId());
+        adapter = new PeerListAdapter((convoKey, title) -> {
+            Intent i = new Intent(this, ChatActivity.class);
+            i.putExtra(ChatActivity.EXTRA_CONVO, convoKey);
+            i.putExtra(ChatActivity.EXTRA_TITLE, title);
+            startActivity(i);
+        });
         list.setLayoutManager(new LinearLayoutManager(this));
         list.setAdapter(adapter);
 
-        send.setOnClickListener(v -> sendMessage());
         name.setOnClickListener(v -> changeName());
 
-        setTitle("MeshTalk — " + identity.getName());
+        setTitle("MeshTalk");
+        me.setText("You: " + identity.getName());
         requestNeededPermissions();
     }
 
-    private void sendMessage() {
-        String text = input.getText().toString().trim();
-        if (TextUtils.isEmpty(text)) return;
-        if (mesh == null) {
-            Toast.makeText(this, "Not ready yet (permissions?)", Toast.LENGTH_SHORT).show();
-            return;
-        }
-        mesh.sendChat(text);
-        // Show our own message immediately.
-        adapter.add(Message.create(identity.getId(), identity.getName(), text, 0));
-        list.scrollToPosition(adapter.size() - 1);
-        input.setText("");
+    @Override
+    protected void onResume() {
+        super.onResume();
+        Mesh.setUiListener(this);
+        PeerStore.get().addObserver(this);
+        me.setText("You: " + identity.getName());
+        refreshPeers();
+        onPeerCountChanged(Mesh.connectedCount());
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        Mesh.clearUiListener(this);
+        PeerStore.get().removeObserver(this);
+    }
+
+    private void refreshPeers() {
+        List<Peer> peers = PeerStore.get().peersByRecency();
+        adapter.setPeers(peers);
+        empty.setVisibility(peers.isEmpty() ? View.VISIBLE : View.GONE);
     }
 
     private void changeName() {
@@ -79,8 +97,8 @@ public class MainActivity extends AppCompatActivity implements MeshManager.MeshL
                 .setView(field)
                 .setPositiveButton("Save", (d, w) -> {
                     identity.setName(field.getText().toString());
-                    setTitle("MeshTalk — " + identity.getName());
-                    restartMesh();
+                    me.setText("You: " + identity.getName());
+                    Mesh.restart(this);
                 })
                 .setNegativeButton("Cancel", null)
                 .show();
@@ -112,7 +130,7 @@ public class MainActivity extends AppCompatActivity implements MeshManager.MeshL
             }
         }
         if (missing.isEmpty()) {
-            startMesh();
+            Mesh.start(this);
         } else {
             ActivityCompat.requestPermissions(this, missing.toArray(new String[0]), REQ_PERMS);
         }
@@ -128,44 +146,13 @@ public class MainActivity extends AppCompatActivity implements MeshManager.MeshL
             if (r != PackageManager.PERMISSION_GRANTED) allGranted = false;
         }
         if (allGranted) {
-            startMesh();
+            Mesh.start(this);
         } else {
             status.setText("Permissions denied — can't find nearby devices. Grant them in Settings.");
         }
     }
 
-    // ---- Mesh lifecycle ----
-
-    private void startMesh() {
-        if (started) return;
-        mesh = new MeshManager(this, identity, this);
-        mesh.start();
-        started = true;
-    }
-
-    private void restartMesh() {
-        if (mesh != null) {
-            mesh.stop();
-            started = false;
-        }
-        startMesh();
-    }
-
-    @Override
-    protected void onDestroy() {
-        super.onDestroy();
-        if (mesh != null) mesh.stop();
-    }
-
-    // ---- MeshListener callbacks ----
-
-    @Override
-    public void onMessage(Message msg) {
-        runOnUiThread(() -> {
-            adapter.add(msg);
-            list.scrollToPosition(adapter.size() - 1);
-        });
-    }
+    // ---- MeshListener (link status) ----
 
     @Override
     public void onStatus(String s) {
@@ -174,10 +161,21 @@ public class MainActivity extends AppCompatActivity implements MeshManager.MeshL
 
     @Override
     public void onPeerCountChanged(int count) {
-        runOnUiThread(() -> {
-            String base = count == 0 ? "No one nearby yet"
-                    : count + " device" + (count == 1 ? "" : "s") + " connected";
-            status.setText(base);
-        });
+        runOnUiThread(() -> status.setText(count == 0
+                ? "Looking for people nearby..."
+                : count + " device" + (count == 1 ? "" : "s") + " connected"));
+    }
+
+    // ---- PeerStore.Observer ----
+
+    @Override
+    public void onPeersChanged() {
+        runOnUiThread(this::refreshPeers);
+    }
+
+    @Override
+    public void onConversation(String convoKey, Message msg) {
+        // A new message changes the preview/ordering on the home list.
+        runOnUiThread(this::refreshPeers);
     }
 }

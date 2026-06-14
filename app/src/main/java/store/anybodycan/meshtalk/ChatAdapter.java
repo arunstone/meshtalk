@@ -20,17 +20,30 @@ import java.util.Locale;
 /** Renders chat messages as left (others) / right (me) bubbles, built in code to keep layouts minimal. */
 public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.VH> {
 
+    public interface OnFileClick {
+        void open(Message m);
+    }
+
     private final List<Message> items = new ArrayList<>();
     private final String myId;
+    private final OnFileClick fileClick;
     private final SimpleDateFormat fmt = new SimpleDateFormat("HH:mm", Locale.getDefault());
 
-    public ChatAdapter(String myId) {
+    public ChatAdapter(String myId, OnFileClick fileClick) {
         this.myId = myId;
+        this.fileClick = fileClick;
     }
 
     public void add(Message m) {
         items.add(m);
         notifyItemInserted(items.size() - 1);
+    }
+
+    /** Replace all messages (used to load a conversation's history when opening it). */
+    public void setAll(List<Message> messages) {
+        items.clear();
+        items.addAll(messages);
+        notifyDataSetChanged();
     }
 
     public int size() {
@@ -76,7 +89,15 @@ public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.VH> {
         Message m = items.get(position);
         boolean mine = m.senderId.equals(myId);
 
-        h.body.setText(m.text);
+        if (m.isFile()) {
+            h.body.setText("📎 " + m.text + sizeSuffix(m.fileSize));
+            h.itemView.setOnClickListener(v -> {
+                if (fileClick != null) fileClick.open(m);
+            });
+        } else {
+            h.body.setText(m.text);
+            h.itemView.setOnClickListener(null);
+        }
         h.time.setText(fmt.format(new Date(m.timestamp)));
 
         FrameLayout.LayoutParams blp = (FrameLayout.LayoutParams) h.bubble.getLayoutParams();
@@ -103,6 +124,14 @@ public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.VH> {
     @Override
     public int getItemCount() {
         return items.size();
+    }
+
+    /** " (2.4 MB)" style hint after a file name; empty if the size is unknown. */
+    private static String sizeSuffix(long bytes) {
+        if (bytes <= 0) return "";
+        if (bytes < 1024) return " (" + bytes + " B)";
+        if (bytes < 1024 * 1024) return " (" + (bytes / 1024) + " KB)";
+        return " (" + String.format(Locale.getDefault(), "%.1f", bytes / 1048576.0) + " MB)";
     }
 
     private static int dp(ViewGroup parent, int v) {

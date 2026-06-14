@@ -16,40 +16,47 @@
         android:text="Starting..." />
 
     <androidx.recyclerview.widget.RecyclerView
-        android:id="@+id/messages"
+        android:id="@+id/peers"
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
-        android:clipToPadding="false"
-        android:paddingTop="4dp"
-        android:paddingBottom="4dp" />
+        android:background="#FFFFFF"
+        android:clipToPadding="false" />
+
+    <TextView
+        android:id="@+id/empty"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center"
+        android:padding="16dp"
+        android:textColor="#888888"
+        android:textSize="13sp"
+        android:visibility="gone"
+        android:text="No one nearby yet. Open MeshTalk on another phone close by — they'll appear here." />
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
         android:padding="6dp"
+        android:gravity="center_vertical"
         android:background="#F7F7F7">
+
+        <TextView
+            android:id="@+id/me"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:paddingStart="6dp"
+            android:paddingEnd="6dp"
+            android:textColor="#333333"
+            android:textSize="13sp"
+            android:text="You" />
 
         <Button
             android:id="@+id/nameBtn"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Name" />
-
-        <EditText
-            android:id="@+id/input"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:hint="Message"
-            android:inputType="textShortMessage|textMultiLine"
-            android:maxLines="4" />
-
-        <Button
-            android:id="@+id/send"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Send" />
+            android:text="Change name" />
     </LinearLayout>
 </LinearLayout>
